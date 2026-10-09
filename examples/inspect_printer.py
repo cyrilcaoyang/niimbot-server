@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
+from uuid import UUID
 
 from lab_skills.claims import ClaimManager
 from lab_skills.registry import EquipmentEntry, Registry
@@ -33,6 +34,14 @@ async def run(args):
         # Keep diagnostics visible when EquipmentClient reduces 503 responses to a status code.
         session._http.event_hooks["response"].append(show_error)
         client = session.get(entry.id)
+        if args.action == "status":
+            print((await client.status()).model_dump_json(indent=2))
+            return
+        if args.action == "job":
+            if not args.job_id:
+                raise ValueError("Supply --job-id for the persisted job")
+            print((await NiimbotClient(client, None).job(args.job_id)).model_dump_json(indent=2))
+            return
         async with ClaimManager(client, owner="printer-operator") as claim:
             printer = NiimbotClient(client, claim)
             method = {
@@ -45,7 +54,11 @@ async def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["scan", "connect", "label-info"])
+    parser.add_argument("action", choices=["scan", "connect", "label-info", "status", "job"])
     parser.add_argument("--config", type=Path, default=Path("printer.local.json"))
     parser.add_argument("--url", default="http://127.0.0.1:8091")
-    asyncio.run(run(parser.parse_args()))
+    parser.add_argument("--job-id", type=UUID)
+    try:
+        asyncio.run(run(parser.parse_args()))
+    except Exception as exc:
+        parser.exit(1, f"Stopped: {exc}\nCheck the server terminal and the configured URL.\n")

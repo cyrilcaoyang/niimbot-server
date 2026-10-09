@@ -1,6 +1,8 @@
 """Optional lab-skills integration; callers supply their existing EquipmentClient/claim."""
 
-from .models import PrintRequest
+from uuid import UUID
+
+from .models import Job, PrintRequest
 
 
 class NiimbotClient:
@@ -27,6 +29,11 @@ class NiimbotClient:
     async def print_label(self, request: PrintRequest):
         # Call only under an approved execution context. This wrapper does not authorize plans.
         return await self.command("printer.print", "/control/print", request)
+
+    async def job(self, job_id):
+        """Read persisted job state through the SDK; never resubmit a print."""
+        job_id = UUID(str(job_id))
+        return await self.client._fetch_envelope(f"/jobs/{job_id}", Job, label="job")
 
     async def disconnect(self):
         return await self.command("printer.disconnect", "/control/disconnect")

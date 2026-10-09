@@ -41,6 +41,7 @@ async def test_real_sdk_claims_discovery_and_wrapper(tmp_path):
                 result = await printer.print_label(request())
                 await app.state.service.task
                 assert app.state.service.journal.get(result["job_id"]).state == "simulated"
+                assert (await printer.job(result["job_id"])).state == "simulated"
                 await printer.disconnect()
             assert app.state.service.current_claim() is None
     assert {d.name for d in skill_definitions()} == {

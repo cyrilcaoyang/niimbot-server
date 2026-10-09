@@ -8,7 +8,7 @@ from .models import Settings
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Niimbot D110_M device service (simulation by default)"
+        description="Niimbot D110_M / B1 device service (simulation by default)"
     )
     parser.add_argument("--config", type=Path, help="Machine-local JSON configuration")
     parser.add_argument("--host", default="127.0.0.1")

@@ -8,6 +8,9 @@ on macOS or BlueZ on Linux. GPL-3.0-only; provenance in [THIRD_PARTY.md](THIRD_P
 Label queries and printing still need firmware validation; B1 has only fake-transport
 tests. The normal D110, B1 Pro and B1 SE are not supported.
 
+See [Mac service and print workflow](docs/MAC_SERVICE.md) for measured-size previews,
+explicit job submission, job monitoring and optional background services.
+
 ## Start on your MacBook
 
 Use a local checkout of this repository and an existing `uv` installation:
