@@ -18,6 +18,9 @@ class NiimbotClient:
     async def scan(self):
         return await self.command("printer.scan", "/control/scan")
 
+    async def label_info(self):
+        return await self.command("printer.label_info", "/control/label-info")
+
     async def connect(self):
         return await self.command("printer.connect", "/control/connect")
 
@@ -42,12 +45,18 @@ def skill_definitions():
             name=f"printer.{name}",
             kind="other",
             description=description,
-            endpoint=f"/control/{name}",
+            endpoint=f"/control/{name.replace('_', '-')}",
             args_schema=args,
             requires_states=states,
         )
         for name, description, args, states in [
-            ("connect", "Connect the configured D110_M", Empty, ["requires_init", "dry_run"]),
+            (
+                "connect",
+                "Connect the configured Niimbot printer",
+                Empty,
+                ["requires_init", "dry_run"],
+            ),
+            ("label_info", "Read RFID and paper information", Empty, ["ready", "dry_run"]),
             ("print", "Submit one deduplicated label job", PrintRequest, ["ready", "dry_run"]),
             ("disconnect", "Close the printer connection", Empty, ["ready", "dry_run"]),
         ]

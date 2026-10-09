@@ -81,9 +81,15 @@ def fake_bleak(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("profile", ["d110_m", "d110_m_v4"])
+@pytest.mark.parametrize("profile", ["d110_m", "d110_m_v4", "b1"])
 async def test_bleak_none_return_and_protocol_sequence(fake_bleak, profile):
     printer = BlePrinter(Settings(target="uuid", profile=profile, row_delay_s=0))
+    if profile == "b1":
+
+        async def discover(timeout):
+            return [SimpleNamespace(name="B1-test", address="uuid")]
+
+        sys.modules["bleak"].BleakScanner.discover = discover
     await printer.connect()
     assert printer.connected
     await printer.print_image(decode_png(png(height=2)), 1, 3, lambda: None, lambda: None)
@@ -94,6 +100,10 @@ async def test_bleak_none_return_and_protocol_sequence(fake_bleak, profile):
     assert sum(p.command == 0x85 for p in packets) == 2
     assert not any(p.command == 0x15 for p in packets)
     assert any(p.command == 0xA3 for p in packets)
+    if profile == "b1":
+        assert packets[-1].command == 0xF3
+        assert [p.data for p in packets if p.command == 0x13] == [bytes.fromhex("000201800001")]
+        assert all(len(p.data) == 54 for p in packets if p.command == 0x85)
     await printer.disconnect()
 
 
@@ -130,3 +140,28 @@ async def test_ambiguous_identity_refused_before_connection(fake_bleak, monkeypa
     with pytest.raises(ValueError, match="found 2"):
         await printer.connect()
     assert not FakeClient.instances
+
+
+def test_b1_identity_does_not_accept_other_models():
+    printer = BlePrinter(Settings(profile="b1"))
+    assert printer.settings.equipment_id == "niimbot_b1"
+    assert printer.matches_model("B1-example")
+    for name in (None, "B18", "B1_PRO-example", "B1_SE-example", "D110_M-example"):
+        assert not printer.matches_model(name)
+
+
+async def test_unsupported_label_queries_do_not_print_or_fault(fake_bleak):
+    printer = BlePrinter(Settings(target="uuid"))
+    await printer.connect()
+
+    async def reject(char, data, response):
+        for packet in printer.client.decoder.feed(data):
+            printer.client.sent.append(packet)
+            printer.notification(None, Packet(0x00, bytes([packet.command])).encode())
+
+    printer.client.write_gatt_char = reject
+    result = await printer.label_info(lambda: None)
+    assert result.rfid.status == result.paper.status == "unsupported"
+    assert printer.fault is None and printer.connected
+    assert [p.command for p in printer.client.sent] == [0x1A, 0x59]
+    await printer.disconnect()

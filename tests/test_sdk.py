@@ -35,6 +35,8 @@ async def test_real_sdk_claims_discovery_and_wrapper(tmp_path):
                 printer = NiimbotClient(client, lease)
                 assert (await printer.scan())[0]["address"] == "simulation"
                 await printer.connect()
+                stock = await printer.label_info()
+                assert stock["simulated"] and stock["rfid"]["barcode"] == "SIMULATED"
                 assert "printer.print" in (await client.status()).allowed_actions
                 result = await printer.print_label(request())
                 await app.state.service.task
@@ -45,4 +47,5 @@ async def test_real_sdk_claims_discovery_and_wrapper(tmp_path):
         "printer.connect",
         "printer.print",
         "printer.disconnect",
+        "printer.label_info",
     }

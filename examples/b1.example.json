@@ -1,0 +1,7 @@
+{
+  "mode": "ble",
+  "equipment_id": "niimbot_b1",
+  "target": "B1-REPLACE_WITH_EXACT_NAME",
+  "profile": "b1",
+  "journal": "local/b1-jobs.sqlite3"
+}

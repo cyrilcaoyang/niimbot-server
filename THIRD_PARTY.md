@@ -20,9 +20,15 @@ Protocol facts were cross-checked against MultiMote's niimbluelib:
 <https://github.com/MultiMote/niimbluelib>, particularly `commands.ts`,
 `packet_generator.ts`, `packet_parser.ts`, `B1PrintTask.ts`, `D110MV4PrintTask.ts`.
 No TypeScript code is bundled. These are reverse-engineered protocols, not manufacturer
-certification. Both profiles need validation with the user's actual firmware.
+certification. All profiles need validation with the user's actual firmware.
 
-Differences from the fork: explicit byte order, 96-dot raster padding, modern Bleak
+Differences from the fork: explicit byte order, model-specific raster padding, modern Bleak
 connection handling, fixed configured identity, persistent notifications with checked
 frames, bounded operations, checked acknowledgments and truthful uncertain outcomes.
 The fork's fixed two-second delay is not treated as confirmation of printing.
+
+RFID/paper layouts and B1 metadata/sequence were cross-checked against niimbluelib
+revision `a78fd7a1bf4585b81add27bc16b57e5f2ee3d50d`: `src/packets/packet_parser.ts`,
+`src/packets/packet_generator.ts`, `src/printer_models.ts`,
+`src/print_tasks/B1PrintTask.ts` and `AbstractPrintTask.ts`.
+Only the known 18-byte paper-info layout is decoded; other layouts remain unknown.

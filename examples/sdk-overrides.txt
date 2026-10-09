@@ -1,0 +1,1 @@
+sdl-lab-contract @ git+https://github.com/AccelerationConsortium/sdl-lab-contract@v1.2.1

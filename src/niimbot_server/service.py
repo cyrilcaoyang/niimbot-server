@@ -29,7 +29,7 @@ class Service:
     def __init__(self, settings: Settings, driver=None):
         self.settings = settings
         self.driver = driver or (
-            SimulatedPrinter() if settings.mode == "simulate" else BlePrinter(settings)
+            SimulatedPrinter(settings) if settings.mode == "simulate" else BlePrinter(settings)
         )
         self.journal = Journal(settings.journal)
         self.claim = None
@@ -44,6 +44,7 @@ class Service:
         self.started = time.monotonic()
         self.cycles = 0
         self.last_error = None
+        self.label_snapshot = None
 
     def current_claim(self):
         if time.monotonic() >= self.deadline:
@@ -118,6 +119,7 @@ class Service:
         async with self.lock:
             if self.driver.connected:
                 return
+            self.label_snapshot = None
             try:
                 async with asyncio.timeout(30):
                     await self.driver.connect()
@@ -143,6 +145,31 @@ class Service:
             async with asyncio.timeout(15):
                 return await self.driver.scan()
 
+    async def label_info(self, token):
+        self.require(token)
+        self.idle()
+        self.reconciled()
+        if not self.driver.connected:
+            raise Refused(412, "requires_init", "Printer is not connected", ["printer.connect"])
+        if getattr(self.driver, "fault", None):
+            raise Refused(412, "printer_fault", "Printer connection has an active fault")
+        async with self.lock:
+            self.label_snapshot = None
+            try:
+                async with asyncio.timeout(self.settings.command_timeout_s * 2 + 6):
+                    result = await self.driver.label_info(lambda: self.require(token))
+                self.require(token)
+                self.label_snapshot = result
+                return result
+            except Refused:
+                raise
+            except Exception as exc:
+                # Do not leave a timed-out command's reply available to a later operation.
+                with contextlib.suppress(Exception):
+                    async with asyncio.timeout(5):
+                        await self.driver.disconnect()
+                raise Refused(503, "label_query_failed", str(exc)) from exc
+
     def submit(self, request, token):
         self.require(token)
         fingerprint = hashlib.sha256(
@@ -159,7 +186,13 @@ class Service:
             raise Refused(412, "requires_init", "Printer is not connected", ["printer.connect"])
         if getattr(self.driver, "fault", None):
             raise Refused(412, "printer_fault", "Printer connection has an active fault")
-        image = decode_png(request.png_base64)
+        if request.density > self.settings.max_density:
+            raise Refused(
+                412,
+                "density_out_of_range",
+                f"{self.settings.model_name} supports density 1–{self.settings.max_density}",
+            )
+        image = decode_png(request.png_base64, self.settings.head_pixels)
         job = Job(
             job_id=str(request.job_id),
             fingerprint=fingerprint,
@@ -170,6 +203,7 @@ class Service:
             updated_at=now(),
             message="Accepted; completion not yet observed",
         )
+        self.label_snapshot = None
         self.journal.put(job)  # Durable intent before the first possible device write.
         self.active_job = job.job_id
         self.set_activity("unknown")  # Sending a job is not evidence of physical movement.
@@ -256,10 +290,12 @@ class Service:
                 actions.append("printer.reconcile")
             elif not fault or not connected:
                 actions.append("printer.print" if connected else "printer.connect")
+                if connected:
+                    actions.append("printer.label_info")
         return EquipmentStatus(
             protocol_version="1.2",
             equipment_id=self.settings.equipment_id,
-            equipment_name="Niimbot D110_M",
+            equipment_name="Niimbot " + self.settings.model_name,
             equipment_kind="other",
             equipment_version="0.1.0",
             equipment_status=state,
@@ -267,7 +303,7 @@ class Service:
             activity_since=self.activity_since,
             message="SIMULATION: no hardware"
             if self.settings.mode == "simulate"
-            else "D110_M protocol is experimental until validated on this printer",
+            else "Printer protocol is experimental until validated on this printer",
             device_time=datetime.now(UTC),
             uptime_seconds=time.monotonic() - self.started,
             required_actions=["printer.reconcile"]
@@ -285,6 +321,10 @@ class Service:
                 "claimed_by": self.current_claim(),
                 "simulated": self.settings.mode == "simulate",
                 "profile": self.settings.profile,
+                "model": self.settings.model_name,
+                "head_pixels": self.settings.head_pixels,
+                "max_density": self.settings.max_density,
+                "label_info_snapshot": self.label_snapshot,
                 "active_job": self.active_job,
                 "uncertain_jobs": [j.job_id for j in uncertain],
                 "hardware_validated": False,

@@ -1,12 +1,12 @@
 # niimbot-server
 
-Experimental **Niimbot D110_M** device service, derived from NiimPrintX, for macOS
+Experimental **Niimbot D110_M and B1** device service, derived from NiimPrintX, for macOS
 testing and eventual SDL2 integration. Python 3.12+, FastAPI, Bleak/CoreBluetooth
 on macOS or BlueZ on Linux. GPL-3.0-only; provenance in [THIRD_PARTY.md](THIRD_PARTY.md).
 
-**No physical printer has been tested with this implementation.** Mock tests verify
-software behavior, not firmware compatibility, radio range, or print quality.
-The normal D110 and D110_M have different protocols. This targets D110_M only.
+**D110_M discovery and connection have been reported working on macOS.**
+Label queries and printing still need firmware validation; B1 has only fake-transport
+tests. The normal D110, B1 Pro and B1 SE are not supported.
 
 ## Start on your MacBook
 
@@ -50,12 +50,59 @@ messages. No automatic fallback: choose from known firmware evidence before a te
 never retry an uncertain job under another profile. Exact UUID selection for the
 notify/write characteristic can be set with `characteristic` if discovery is ambiguous.
 
+## Read the loaded label stock (no printing)
+
+Install the optional SDK with this override: the pinned lab-skills revision requests
+contract v1.2.0, conflicting with this service's v1.2.1.
+
+```sh
+uv pip install --overrides examples/sdk-overrides.txt \
+  'lab-skills @ git+https://github.com/AccelerationConsortium/ac-organic-lab@b7e936f72622b5a7875897010cc2125b97561f3b#subdirectory=skills'
+```
+
+Use `uv run --no-sync` afterward to retain the separately installed SDK. Restart the
+updated server, then in a second terminal:
+
+```sh
+uv run --no-sync python examples/inspect_printer.py connect
+uv run --no-sync python examples/inspect_printer.py label-info
+```
+
+The helper reads `printer.local.json` and uses lab-skills and a claim. It never prints
+or feeds. `NiimbotClient.label_info()` explicitly queries RFID and paper information.
+RFID may report a stock barcode, serial and counters; counter units remain unknown,
+so `remaining` is not asserted to be a label count. A recognized paper reply provides
+printer-reported dimensions. Unknown formats and unsupported commands are identified
+explicitly. No tag does not prove there is no paper. Stock names, colors and dimensions
+are not guessed from barcodes or SKU text.
+
+`/status` only returns timestamped `details.label_info_snapshot`; polling never queries
+the printer. Manual roll changes can make it stale. Query again after changing rolls;
+a new connection or accepted print clears it. Optional paper query timeout preserves
+RFID data and closes the link; reconnect explicitly. RFID failures return
+`label_query_failed` and close the link. There are no automatic retries.
+
+## B1 profile
+
+Experimental `b1` selects a 384-dot head at 203 dpi, density 1–5 and the B1 print sequence.
+Copy `examples/b1.example.json` to `b1.local.json`, set the exact advertised B1 name or
+Bluetooth identifier, and give each printer its own process, journal and port:
+
+```sh
+uv run --no-sync niimbot-server --config b1.local.json --port 8092
+uv run --no-sync python examples/inspect_printer.py scan --config b1.local.json --url http://127.0.0.1:8092
+```
+
+Replace `scan` with `connect` or `label-info` for subsequent diagnostics. The default
+equipment ID is `niimbot_b1`. No physical B1 has been validated; this does not imply
+B1 Pro or B1 SE compatibility.
+
 ## What is implemented
 
 - Side-effect-free `/`, `/health`, `/status`, `/jobs/{job_id}`; STATUS_SPEC **1.2**.
-- Hard-enforced claim/heartbeat/release; claimed scan/connect/disconnect/print controls.
-- Strict PNG validation: maximum 96-dot head width, 2400 rows, 1 MB; 1–20 copies;
-  density 1–3. Render to the final orientation and actual label dimensions yourself.
+- Hard-enforced claim/heartbeat/release; claimed scan/connect/disconnect/label-info/print controls.
+- Strict PNG validation: maximum 96-dot D110_M or 384-dot B1 head width, 2400 rows, 1 MB;
+  1–20 copies; density 1–3 for D110_M, 1–5 for B1. Render to the final orientation and actual label dimensions yourself.
   No automatic resizing/rotation; transparent backgrounds become white.
 - Persistent job UUID deduplication, bounded command/job timeouts, framed/checksummed
   notifications, expected-response matching, explicit Bleak 1.x connection semantics.

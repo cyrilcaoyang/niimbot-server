@@ -13,6 +13,7 @@ from .models import (
     ClaimInput,
     DeviceInfo,
     Job,
+    LabelInfo,
     PrintRequest,
     ReconcileRequest,
     Refusal,
@@ -63,7 +64,7 @@ def create_app(settings: Settings | None = None, driver=None):
         finally:
             await app.state.service.close()
 
-    app = FastAPI(title="Niimbot D110_M server", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Niimbot label-printer server", version="0.1.0", lifespan=lifespan)
     app.add_middleware(BodyLimit)
     if settings.cors_origins:
         app.add_middleware(
@@ -91,7 +92,7 @@ def create_app(settings: Settings | None = None, driver=None):
     def probe():
         return ProbeResponse(
             equipment_id=settings.equipment_id,
-            equipment_name="Niimbot D110_M",
+            equipment_name="Niimbot " + settings.model_name,
             protocol_version="1.2",
         )
 
@@ -133,6 +134,11 @@ def create_app(settings: Settings | None = None, driver=None):
             raise
         except Exception as exc:
             raise Refused(503, "scan_failed", str(exc)) from exc
+
+    @app.post("/control/label-info", response_model=LabelInfo, responses=ERRORS)
+    async def label_info(request: Request, token: Token = None):
+        """Explicit RFID/paper query; no feed or print. Status only exposes the cached snapshot."""
+        return await request.app.state.service.label_info(token)
 
     @app.post("/control/connect", response_model=ActionResult, responses=ERRORS)
     async def connect(request: Request, token: Token = None):
@@ -181,7 +187,7 @@ def create_app(settings: Settings | None = None, driver=None):
         return {
             "documentation_version": "1.0",
             "equipment_kind": "other",
-            "model": "D110_M",
+            "model": settings.model_name,
             "protocol_version": "1.2",
             "scope": "Single experimental label printer",
             "links": {"guide": "/agent-docs", "openapi": "/openapi.json"},

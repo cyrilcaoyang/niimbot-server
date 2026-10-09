@@ -1,13 +1,17 @@
 import asyncio
 import contextlib
 from collections.abc import Callable
+from datetime import UTC, datetime
 
-from .models import Settings
+from .models import LabelInfo, PaperInfo, RfidInfo, Settings
 from .protocol import (
+    CommandUnsupported,
     Decoder,
     Packet,
     ProtocolError,
     dimension_payload,
+    parse_paper,
+    parse_rfid,
     parse_status,
     raster_rows,
     start_payload,
@@ -28,14 +32,18 @@ class BlePrinter:
     def connected(self):
         return bool(self.client and self.client.is_connected and self.characteristic)
 
+    def matches_model(self, name):
+        # B1 must not also match B18, B1_PRO, B1_SE or unrelated devices.
+        model = self.settings.model_name
+        name = (name or "").upper()
+        return name == model or name.startswith(model + "-")
+
     async def scan(self):
         from bleak import BleakScanner
 
         devices = await BleakScanner.discover(timeout=5)
         return [
-            {"name": d.name, "address": d.address}
-            for d in devices
-            if d.name and d.name.upper().startswith("D110_M")
+            {"name": d.name, "address": d.address} for d in devices if self.matches_model(d.name)
         ]
 
     def disconnected(self, _client):
@@ -46,6 +54,12 @@ class BlePrinter:
     def notification(self, _sender, data):
         try:
             for packet in self.decoder.feed(data):
+                if packet.command == 0x00 and self.expected in (0x1B, 0x69):
+                    if self.pending and not self.pending.done():
+                        self.pending.set_exception(
+                            CommandUnsupported("Query not supported by firmware")
+                        )
+                    continue
                 if packet.command in (0x00, 0xDB):
                     raise ProtocolError(f"Printer refused command: {packet.data.hex()}")
                 if self.pending and not self.pending.done() and packet.command == self.expected:
@@ -59,7 +73,7 @@ class BlePrinter:
         from bleak import BleakClient, BleakScanner
 
         if not self.settings.target:
-            raise ValueError("Set target to the exact D110_M name or macOS Bluetooth UUID")
+            raise ValueError("Set target to the exact printer name or macOS Bluetooth UUID")
         devices = await BleakScanner.discover(timeout=5)
         matches = [
             d
@@ -70,8 +84,8 @@ class BlePrinter:
         if len(matches) != 1:
             raise ValueError(f"Expected exactly one matching printer; found {len(matches)}")
         device = matches[0]
-        if not device.name or not device.name.upper().startswith("D110_M"):
-            raise ValueError("Selected device does not advertise as D110_M")
+        if not self.matches_model(device.name):
+            raise ValueError(f"Selected device does not advertise as {self.settings.model_name}")
         self.decoder = Decoder()
         self.fault = None
         self.client = BleakClient(device, disconnected_callback=self.disconnected)
@@ -133,6 +147,23 @@ class BlePrinter:
             self.pending = None
             self.expected = None
 
+    async def label_info(self, guard):
+        # Diagnostics never issue feed, print, calibration or RFID-write commands.
+        try:
+            rfid = parse_rfid(await self.command(0x1A, b"\x01", 0x1B, guard))
+        except CommandUnsupported as exc:
+            rfid = RfidInfo(status="unsupported", message=str(exc))
+        try:
+            paper = parse_paper(await self.command(0x59, b"\x01", 0x69, guard))
+        except CommandUnsupported as exc:
+            paper = PaperInfo(status="unsupported", message=str(exc))
+        except TimeoutError:
+            # RFID can succeed while optional paper-info is silent on older firmware.
+            # Close to isolate late replies; do not reconnect or retry automatically.
+            await self.disconnect()
+            paper = PaperInfo(message="Paper-info timed out; link closed. RFID result preserved")
+        return LabelInfo(queried_at=datetime.now(UTC), simulated=False, rfid=rfid, paper=paper)
+
     async def ack(self, command, data, response, guard):
         answer = await self.command(command, data, response, guard)
         if not answer or answer[0] != 1:
@@ -148,7 +179,7 @@ class BlePrinter:
         else:
             await self.ack(0x03, b"\x01", 0x04, guard)
         await self.ack(0x13, dimension_payload(image.height, copies, profile), 0x14, guard)
-        for row in raster_rows(image):
+        for row in raster_rows(image, self.settings.head_pixels):
             await self.send(row, guard)
             await asyncio.sleep(self.settings.row_delay_s)
         await self.ack(0xE3, b"\x01", 0xE4, guard)
@@ -163,7 +194,7 @@ class BlePrinter:
             if progress or feed:
                 on_running()
             await asyncio.sleep(0.3)
-        if profile == "d110_m_v4":
+        if profile in ("d110_m_v4", "b1"):
             await self.ack(0xF3, b"\x01", 0xF4, guard)
 
 
@@ -172,8 +203,27 @@ class SimulatedPrinter:
 
     connected = False
 
+    def __init__(self, settings=None):
+        self.settings = settings or Settings()
+
     async def scan(self):
-        return [{"name": "D110_M-SIMULATED", "address": "simulation"}]
+        return [{"name": self.settings.model_name + "-SIMULATED", "address": "simulation"}]
+
+    async def label_info(self, guard):
+        guard()
+        return LabelInfo(
+            queried_at=datetime.now(UTC),
+            simulated=True,
+            rfid=RfidInfo(
+                status="available",
+                tag_present=True,
+                barcode="SIMULATED",
+                total=100,
+                used=4,
+                remaining=96,
+            ),
+            paper=PaperInfo(message="Simulation has no physical label dimensions"),
+        )
 
     async def connect(self):
         self.connected = True

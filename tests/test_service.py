@@ -15,6 +15,7 @@ from niimbot_server.service import Refused, Service
 
 class CountPrinter(SimulatedPrinter):
     def __init__(self):
+        super().__init__()
         self.connected = False
         self.prints = 0
         self.scans = 0
