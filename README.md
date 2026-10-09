@@ -108,6 +108,8 @@ uv run ruff check .
 ```
 
 Tests use simulated/fake transports only. No scan, BLE connection, print, or live lab
-endpoint is needed. CI runs the same checks on Linux and macOS. Runtime artifacts stay
+endpoint is needed. The GitHub Actions template in `examples/github-actions-tests.yml`
+runs the same checks on Linux and macOS once copied to `.github/workflows/tests.yml`
+by an account with workflow permission. Automatic CI is not active yet. Runtime artifacts stay
 in ignored `local/`. Shutdown disconnects and records uncertainty; it cannot promise
 to stop labels already buffered by the physical printer.
