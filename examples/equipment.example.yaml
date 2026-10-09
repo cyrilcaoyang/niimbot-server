@@ -1,0 +1,15 @@
+# Example only; not installed in the production lab registry.
+equipment:
+  - id: niimbot_d110m
+    name: Niimbot D110_M
+    kind: other
+    adapter: http
+    protocol: "1.2"
+    enabled: false
+    base_url: http://127.0.0.1:8091
+    status_path: /status
+    documentation:
+      - {label: Swagger, path: /docs, kind: swagger}
+      - {label: OpenAPI, path: /openapi.json, kind: openapi}
+      - {label: Agent guide, path: /agent-docs, kind: markdown}
+      - {label: Documentation index, path: /llms.txt, kind: text}

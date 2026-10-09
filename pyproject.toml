@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "niimbot-server"
+version = "0.1.0"
+description = "SDL2 device service for Niimbot D110_M label printers"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-3.0-only"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "pillow>=11,<13",
+  "bleak>=1.0,<2", "sdl-lab-contract",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "httpx>=0.27,<1", "ruff>=0.11", "pyyaml>=6"]
+
+[project.scripts]
+niimbot-server = "niimbot_server.cli:main"
+
+[tool.uv.sources]
+sdl-lab-contract = { git = "https://github.com/AccelerationConsortium/sdl-lab-contract", tag = "v1.2.1" }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
