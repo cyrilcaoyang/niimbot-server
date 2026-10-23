@@ -1,7 +1,7 @@
 """Local operational journal, not a substitute for BitacoraDB experiment records."""
 
-import fcntl
 import json
+import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,9 +16,23 @@ def now():
 class Journal:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.lock_file = path.with_suffix(".lock").open("a")
+        self.lock_file = path.with_suffix(".lock").open("a+b")
         try:
-            fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if os.name == "nt":
+                import msvcrt
+
+                # Windows locks a byte range, not the entire file. All owners
+                # lock byte zero; closing the handle releases it after a crash.
+                self.lock_file.seek(0, os.SEEK_END)
+                if self.lock_file.tell() == 0:
+                    self.lock_file.write(b"\0")
+                    self.lock_file.flush()
+                self.lock_file.seek(0)
+                msvcrt.locking(self.lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             self.lock_file.close()
             raise RuntimeError("Another niimbot-server process owns this journal") from None

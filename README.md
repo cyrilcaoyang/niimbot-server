@@ -149,6 +149,8 @@ This first implementation does not create or modify BitacoraDB records. Label im
 job state, device names, addresses and local settings must not be committed.
 Preserve the journal across upgrades: deleting it discards deduplication and uncertainty.
 
+For native Windows hosting, see [Windows service setup](docs/WINDOWS_SERVICE.md).
+
 ## Development
 
 ```sh
