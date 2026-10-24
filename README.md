@@ -151,6 +151,9 @@ Preserve the journal across upgrades: deleting it discards deduplication and unc
 
 For native Windows hosting, see [Windows service setup](docs/WINDOWS_SERVICE.md).
 
+See [B1 availability and auto-shutdown](docs/B1_AVAILABILITY.md) for the next-visit
+checklist, English/Chinese sources and current keep-alive limitations.
+
 ## Development
 
 ```sh
