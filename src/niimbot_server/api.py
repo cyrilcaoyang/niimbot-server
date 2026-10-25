@@ -14,6 +14,8 @@ from .models import (
     DeviceInfo,
     Job,
     LabelInfo,
+    PowerInfo,
+    PowerSetting,
     PrintRequest,
     ReconcileRequest,
     Refusal,
@@ -139,6 +141,16 @@ def create_app(settings: Settings | None = None, driver=None):
     async def label_info(request: Request, token: Token = None):
         """Explicit RFID/paper query; no feed or print. Status only exposes the cached snapshot."""
         return await request.app.state.service.label_info(token)
+
+    @app.post("/control/power-info", response_model=PowerInfo, responses=ERRORS)
+    async def power_info(request: Request, token: Token = None):
+        """Explicit claimed model, firmware and shutdown-setting read; no print."""
+        return await request.app.state.service.power(token)
+
+    @app.post("/control/set-power", response_model=PowerInfo, responses=ERRORS)
+    async def set_power(body: PowerSetting, request: Request, token: Token = None):
+        """Set a B1 shutdown index once and verify readback. Does not guarantee no sleep."""
+        return await request.app.state.service.power(token, body)
 
     @app.post("/control/connect", response_model=ActionResult, responses=ERRORS)
     async def connect(request: Request, token: Token = None):

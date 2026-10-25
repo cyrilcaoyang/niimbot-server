@@ -49,4 +49,6 @@ async def test_real_sdk_claims_discovery_and_wrapper(tmp_path):
         "printer.print",
         "printer.disconnect",
         "printer.label_info",
+        "printer.power_info",
+        "printer.set_power",
     }

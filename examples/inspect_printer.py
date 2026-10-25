@@ -48,13 +48,16 @@ async def run(args):
                 "scan": printer.scan,
                 "connect": printer.connect,
                 "label-info": printer.label_info,
+                "power-info": printer.power_info,
             }[args.action]
             print(json.dumps(await method(), indent=2))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["scan", "connect", "label-info", "status", "job"])
+    parser.add_argument(
+        "action", choices=["scan", "connect", "label-info", "power-info", "status", "job"]
+    )
     parser.add_argument("--config", type=Path, default=Path("printer.local.json"))
     parser.add_argument("--url", default="http://127.0.0.1:8091")
     parser.add_argument("--job-id", type=UUID)

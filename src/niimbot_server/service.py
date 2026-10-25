@@ -45,6 +45,7 @@ class Service:
         self.cycles = 0
         self.last_error = None
         self.label_snapshot = None
+        self.power_snapshot = None
 
     def current_claim(self):
         if time.monotonic() >= self.deadline:
@@ -120,6 +121,7 @@ class Service:
             if self.driver.connected:
                 return
             self.label_snapshot = None
+            self.power_snapshot = None
             try:
                 async with asyncio.timeout(30):
                     await self.driver.connect()
@@ -169,6 +171,80 @@ class Service:
                     async with asyncio.timeout(5):
                         await self.driver.disconnect()
                 raise Refused(503, "label_query_failed", str(exc)) from exc
+
+    async def power(self, token, setting=None):
+        self.require(token)
+        self.idle()
+        self.reconciled()
+        if self.settings.profile != "b1":
+            raise Refused(412, "unsupported_model", "Power controls are restricted to B1")
+        if not self.driver.connected or getattr(self.driver, "fault", None):
+            raise Refused(412, "requires_init", "A connected fault-free printer is required")
+        async with self.lock:
+            self.power_snapshot = None
+            attempted = False
+            try:
+                async with asyncio.timeout(self.settings.command_timeout_s * 7 + 5):
+
+                    def guard():
+                        self.require(token)
+
+                    before = await self.driver.power_info(guard)
+                    if setting is not None:
+                        if before.model_id != 4096:
+                            raise Refused(
+                                412, "unsupported_model", "Firmware does not identify as B1"
+                            )
+                        if before.shutdown_index != setting.expected_current_index:
+                            raise Refused(
+                                409, "setting_changed", "Shutdown setting changed; read it again"
+                            )
+                        if before.shutdown_index == setting.shutdown_index:
+                            self.power_snapshot = before
+                            return before
+                        self.journal.configuration_event(
+                            action="set_shutdown",
+                            outcome="intent",
+                            owner=self.claim.owner,
+                            before=before.model_dump(mode="json"),
+                            requested=setting.shutdown_index,
+                        )
+                        attempted = True
+                        await self.driver.set_shutdown(setting.shutdown_index, guard)
+                        after = await self.driver.power_info(guard)
+                        if (after.model_id, after.firmware_hex, after.shutdown_index) != (
+                            before.model_id,
+                            before.firmware_hex,
+                            setting.shutdown_index,
+                        ):
+                            raise ProtocolError(
+                                "Shutdown readback does not match; no automatic retry"
+                            )
+                        self.journal.configuration_event(
+                            action="set_shutdown",
+                            outcome="readback_verified",
+                            after=after.model_dump(mode="json"),
+                        )
+                    else:
+                        after = before
+                    self.require(token)
+                    self.power_snapshot = after
+                    return after
+            except Exception as exc:
+                if attempted:
+                    self.journal.configuration_event(
+                        action="set_shutdown", outcome="unknown", error=str(exc)
+                    )
+                with contextlib.suppress(Exception):
+                    async with asyncio.timeout(5):
+                        await self.driver.disconnect()
+                if isinstance(exc, Refused):
+                    raise
+                raise Refused(
+                    503,
+                    "power_operation_failed",
+                    f"{type(exc).__name__}: {exc}; read the setting before any retry",
+                ) from exc
 
     def submit(self, request, token):
         self.require(token)
@@ -292,6 +368,8 @@ class Service:
                 actions.append("printer.print" if connected else "printer.connect")
                 if connected:
                     actions.append("printer.label_info")
+                    if self.settings.profile == "b1":
+                        actions.extend(["printer.power_info", "printer.set_power"])
         return EquipmentStatus(
             protocol_version="1.2",
             equipment_id=self.settings.equipment_id,
@@ -325,6 +403,7 @@ class Service:
                 "head_pixels": self.settings.head_pixels,
                 "max_density": self.settings.max_density,
                 "label_info_snapshot": self.label_snapshot,
+                "power_info_snapshot": self.power_snapshot,
                 "active_job": self.active_job,
                 "uncertain_jobs": [j.job_id for j in uncertain],
                 "hardware_validated": False,

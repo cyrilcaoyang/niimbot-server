@@ -41,11 +41,19 @@ class Journal:
         self.db.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, data TEXT NOT NULL)")
         self.db.execute("""CREATE TABLE IF NOT EXISTS events
             (id INTEGER PRIMARY KEY, job_id TEXT, at TEXT, data TEXT NOT NULL)""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS configuration_events
+            (id INTEGER PRIMARY KEY, at TEXT, data TEXT NOT NULL)""")
         self.db.commit()
         for (data,) in self.db.execute("SELECT data FROM jobs").fetchall():
             job = Job.model_validate_json(data)
             if job.state == "running":
                 self.update(job, state="unknown", message="Service interrupted; outcome unknown")
+
+    def configuration_event(self, **data):
+        with self.db:
+            self.db.execute(
+                "INSERT INTO configuration_events(at,data) VALUES (?,?)", (now(), json.dumps(data))
+            )
 
     def get(self, job_id: str):
         row = self.db.execute("SELECT data FROM jobs WHERE id=?", (job_id,)).fetchone()

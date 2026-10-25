@@ -124,3 +124,17 @@ class ActionResult(BaseModel):
 class DeviceInfo(BaseModel):
     name: str | None
     address: str
+
+
+class PowerInfo(BaseModel):
+    queried_at: datetime
+    simulated: bool
+    model_id: int
+    firmware_hex: str
+    shutdown_index: int = Field(ge=1, le=4)
+    message: str = "Shutdown index is model-dependent; 4 can mean 60 minutes or never"
+
+
+class PowerSetting(StrictModel):
+    shutdown_index: int = Field(ge=1, le=4)
+    expected_current_index: int = Field(ge=1, le=4)

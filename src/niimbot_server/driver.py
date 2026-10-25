@@ -3,7 +3,7 @@ import contextlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from .models import LabelInfo, PaperInfo, RfidInfo, Settings
+from .models import LabelInfo, PaperInfo, PowerInfo, RfidInfo, Settings
 from .protocol import (
     CommandUnsupported,
     Decoder,
@@ -54,7 +54,7 @@ class BlePrinter:
     def notification(self, _sender, data):
         try:
             for packet in self.decoder.feed(data):
-                if packet.command == 0x00 and self.expected in (0x1B, 0x69):
+                if packet.command == 0x00 and self.expected in (0x1B, 0x69, 0x47, 0x48, 0x49, 0x37):
                     if self.pending and not self.pending.done():
                         self.pending.set_exception(
                             CommandUnsupported("Query not supported by firmware")
@@ -164,6 +164,28 @@ class BlePrinter:
             paper = PaperInfo(message="Paper-info timed out; link closed. RFID result preserved")
         return LabelInfo(queried_at=datetime.now(UTC), simulated=False, rfid=rfid, paper=paper)
 
+    async def power_info(self, guard):
+        model = await self.command(0x40, b"\x08", 0x48, guard)
+        firmware = await self.command(0x40, b"\x09", 0x49, guard)
+        shutdown = await self.command(0x40, b"\x07", 0x47, guard)
+        if len(model) not in (1, 2) or len(firmware) != 2:
+            raise ProtocolError("Unrecognized model/firmware reply")
+        if len(shutdown) != 1 or shutdown[0] not in (1, 2, 3, 4):
+            raise ProtocolError("Unrecognized shutdown index")
+        model_id = model[0] << 8 if len(model) == 1 else int.from_bytes(model, "big")
+        return PowerInfo(
+            queried_at=datetime.now(UTC),
+            simulated=False,
+            model_id=model_id,
+            firmware_hex=firmware.hex(),
+            shutdown_index=shutdown[0],
+        )
+
+    async def set_shutdown(self, index, guard):
+        if index not in (1, 2, 3, 4):
+            raise ValueError("Shutdown index must be 1–4")
+        await self.ack(0x27, bytes([index]), 0x37, guard)
+
     async def ack(self, command, data, response, guard):
         answer = await self.command(command, data, response, guard)
         if not answer or answer[0] != 1:
@@ -205,6 +227,20 @@ class SimulatedPrinter:
 
     def __init__(self, settings=None):
         self.settings = settings or Settings()
+
+    async def power_info(self, guard):
+        guard()
+        return PowerInfo(
+            queried_at=datetime.now(UTC),
+            simulated=True,
+            model_id=4096,
+            firmware_hex="0000",
+            shutdown_index=getattr(self, "shutdown_index", 1),
+        )
+
+    async def set_shutdown(self, index, guard):
+        guard()
+        self.shutdown_index = index
 
     async def scan(self):
         return [{"name": self.settings.model_name + "-SIMULATED", "address": "simulation"}]

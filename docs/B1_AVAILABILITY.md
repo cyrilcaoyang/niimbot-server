@@ -48,8 +48,8 @@ availability on the actual unit. Continuous availability is not yet guaranteed.
 
 ## Current implementation boundary
 
-`niimbot-server` has explicit scan/connect/disconnect and RFID/paper queries. It does
-not currently expose power-policy settings, periodically send printer heartbeats,
+`niimbot-server` has explicit scan/connect/disconnect and RFID/paper queries. It now exposes explicit claimed power reads and shutdown-index writes (B1 only). It does
+not periodically send printer heartbeats,
 automatically reconnect, or wake a powered-off printer. `/status` is cached and
 side-effect-free. Claim heartbeats renew the service lock; they are not Bluetooth
 heartbeats and do not keep the printer awake.
@@ -58,3 +58,20 @@ Any future keep-alive implementation must serialize device I/O with print operat
 preserve claim/interlock semantics and keep status reads side-effect-free. Connection
 recovery must never replay a physical print. Enabling Never would address power-off
 only; radio range, PC power management and link failures remain separate concerns.
+
+## Claimed service controls
+
+`NiimbotClient.power_info()` / `POST /control/power-info` reads model ID, firmware
+bytes and the current shutdown index. `NiimbotClient.set_power(PowerSetting(...))` /
+`POST /control/set-power` requires `shutdown_index` (1–4) and
+`expected_current_index` (1–4). The service requires a claim, idle connected state,
+no unreconciled jobs and actual firmware model ID 4096 before changing B1 settings.
+It reads before writing, refuses a changed baseline, sends at most one write, and
+verifies the model/firmware/setting readback. The journal stores configuration intent
+and outcome. No changes are applied automatically on startup or reconnect.
+
+A matching readback confirms the raw setting, not that the firmware interprets it
+as Never. Errors close the link and require a fresh read before any new attempt.
+The timestamped `details.power_info_snapshot` is cached; `/status` never polls BLE.
+Use `examples/inspect_printer.py power-info` with the appropriate config and URL
+for an explicit read. These controls never print or feed.

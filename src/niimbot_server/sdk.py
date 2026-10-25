@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from .models import Job, PrintRequest
+from .models import Job, PowerSetting, PrintRequest
 
 
 class NiimbotClient:
@@ -10,18 +10,24 @@ class NiimbotClient:
         self.client = equipment_client
         self.claim = claim
 
-    async def command(self, action, path, body=None):
+    async def command(self, action, path, body=None, timeout=40):
         self.claim.assert_alive()
         status = await self.client.status()
         if action not in status.allowed_actions:
             raise RuntimeError(f"{action} is unavailable: {status.equipment_status}")
-        return await self.client.command(path, body, claim_token=self.claim.token, timeout=40)
+        return await self.client.command(path, body, claim_token=self.claim.token, timeout=timeout)
 
     async def scan(self):
         return await self.command("printer.scan", "/control/scan")
 
     async def label_info(self):
         return await self.command("printer.label_info", "/control/label-info")
+
+    async def power_info(self):
+        return await self.command("printer.power_info", "/control/power-info", timeout=220)
+
+    async def set_power(self, request: PowerSetting):
+        return await self.command("printer.set_power", "/control/set-power", request, timeout=220)
 
     async def connect(self):
         return await self.command("printer.connect", "/control/connect")
@@ -64,6 +70,13 @@ def skill_definitions():
                 ["requires_init", "dry_run"],
             ),
             ("label_info", "Read RFID and paper information", Empty, ["ready", "dry_run"]),
+            ("power_info", "Read B1 power configuration", Empty, ["ready", "dry_run"]),
+            (
+                "set_power",
+                "Change B1 shutdown index with readback",
+                PowerSetting,
+                ["ready", "dry_run"],
+            ),
             ("print", "Submit one deduplicated label job", PrintRequest, ["ready", "dry_run"]),
             ("disconnect", "Close the printer connection", Empty, ["ready", "dry_run"]),
         ]

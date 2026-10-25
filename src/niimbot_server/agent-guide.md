@@ -81,3 +81,12 @@ stop command for this printer. No alternate protocol is tried after a failed pri
 `/docs`, `/openapi.json`, `/agent-docs`, `/llms.txt`, `/docs/agent`, `/plans/actions`
 provide documentation/discovery. See README for the optional NiimbotClient wrapper and
 skill definitions. Existing production registry/catalog remain unchanged until reviewed.
+
+## B1 power policy
+
+`printer.power_info` reads model/firmware/shutdown index. `printer.set_power` writes
+one explicitly requested index, requires the expected current index, verifies model
+ID 4096 and reads the result back. Both require an idle connected printer, claim and
+no unreconciled jobs. Index 4 is model-dependent (60 minutes or never); readback is
+not proof of indefinite wakefulness. Configuration intent/outcome are journaled.
+No automatic setting changes, printing, feeding or retry; `/status` is cached only.

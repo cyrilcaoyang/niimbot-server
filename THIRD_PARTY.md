@@ -32,3 +32,7 @@ revision `a78fd7a1bf4585b81add27bc16b57e5f2ee3d50d`: `src/packets/packet_parser.
 `src/packets/packet_generator.ts`, `src/printer_models.ts`,
 `src/print_tasks/B1PrintTask.ts` and `AbstractPrintTask.ts`.
 Only the known 18-byte paper-info layout is decoded; other layouts remain unknown.
+
+Power configuration uses the documented PrinterInfo keys 7/8/9 and SetAutoShutdownTime
+command from niimbluelib's `src/packets/enumerations.ts` and `packet_generator.ts`,
+reviewed 2026-10-25. Index semantics remain explicitly model-dependent.
